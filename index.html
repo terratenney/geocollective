@@ -1,0 +1,672 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+  <meta name="description" content="Calcite Maps - ArcGIS 4.x SDK Sample">
+  <link rel="icon" href="http://www.esri.com/favicon.ico">
+  <title>Calcite Maps - ArcGIS JS 4.0 Example</title>
+
+  <!-- Calcite Bootstrap -->
+  <link rel="stylesheet" href="http://esri.github.com/calcite-maps/dist/css/calcite-bootstrap.min-v0.2.css">
+
+  <!-- Calcite Maps -->
+  <link rel="stylesheet" href="http://esri.github.com/calcite-maps/dist/css/calcite-maps-arcgis-4.x.min-v0.2.css">
+
+  <!-- ArcGIS JS 4.0 -->
+  <link rel="stylesheet" href="https://js.arcgis.com/4.1/esri/css/main.css">
+
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      height: 100%;
+    }
+    .esri-legend {
+      overflow: hidden;
+    }
+
+    .esri-view-height-medium .esri-popup .esri-popup-content{
+        max-height: 200px !important;
+        
+    }
+
+    /*
+    .esri-view-width-xlarge .esri-popup .esri-popup-main{
+        width: 1273px !important;
+        height: 841px !important;
+    }
+
+
+    */
+  </style>
+
+</head>
+
+<body class="calcite-maps calcite-nav-top">
+
+  <!-- Navbar -->
+
+  <nav class="navbar calcite-navbar navbar-fixed-top calcite-text-light calcite-bg-dark calcite-bgcolor-dark-blue">
+    <!-- Header -->
+    <div class="navbar-header">
+      <a class="navbar-brand" role="button" id="calciteToggleNavbar" aria-haspopup="true">
+        <span class="esri-icon esri-icon-map-pin"></span>
+      </a>
+    </div>
+    <!-- Title -->
+    <div class="calcite-title calcite-overflow-hidden">
+      <span class="calcite-title-main">Geocollective</span>
+      <span class="calcite-title-divider hidden-xs"></span>
+      <span class="calcite-title-sub hidden-xs">Toronto Tweets</span>
+    </div>
+    <!-- Nav -->
+    <ul class="calcite-nav nav navbar-nav">                    
+      <li><a role="button" data-target=".esri-legend" data-toggle="collapse" aria-expanded="true"><span class="glyphicon glyphicon-list"></span></a></li>          
+    </ul>
+  </nav><!--/.navbar -->
+
+  <!-- Map Container  -->
+
+  <div class="calcite-map calcite-map-absolute">
+    <div id="mapViewDiv"></div>
+  </div><!-- /.container -->
+
+  <script type="text/javascript">
+    var dojoConfig = {
+      packages: [{
+        name: "bootstrap",
+        location: "http://esri.github.com/calcite-maps/dist/vendor/dojo-bootstrap"
+      },
+      {
+        name: "calcite-maps",
+        location: "http://esri.github.com/calcite-maps/dist/js/dojo"
+      }]
+    };
+  </script>
+
+  <!-- ArcGIS JS 4.0 -->
+  <script src="https://js.arcgis.com/4.1/"></script>
+
+  <script>
+
+    require([
+      // ArcGIS JS
+      "esri/Color",
+      "esri/Map",
+      "esri/views/SceneView",
+      "esri/Camera",
+      "esri/layers/GraphicsLayer",
+
+      "esri/Graphic",
+      "esri/geometry/Point",
+      "esri/geometry/Polyline",
+      "esri/geometry/Polygon",
+
+      "esri/symbols/SimpleMarkerSymbol",
+      "esri/symbols/SimpleLineSymbol",
+      "esri/symbols/SimpleFillSymbol",
+		
+	    "esri/widgets/Search",
+      "esri/widgets/Search/SearchViewModel",
+      "esri/widgets/BasemapToggle",
+      "esri/widgets/BasemapToggle/BasemapToggleViewModel",
+      "dojo/request/xhr",
+      "dojo/_base/lang",
+      "dojo/dom-style",
+      "dojo/query",
+
+      "esri/symbols/Symbol3D",
+      "esri/symbols/PointSymbol3D",
+      "esri/symbols/ObjectSymbol3DLayer",
+      "esri/symbols/PolygonSymbol3D",
+      "esri/symbols/ExtrudeSymbol3DLayer",
+      "esri/symbols/TextSymbol3DLayer",
+      "esri/layers/SceneLayer",
+      "esri/PopupTemplate",
+  
+      "dojo/promise/all",
+      "dojo/on",
+      "dojo/query",
+      "esri/tasks/support/IdentifyParameters",
+      "esri/symbols/LabelSymbol3D",
+      // Bootstrap
+      "bootstrap/Collapse",
+
+      // Calcite-maps
+      "calcite-maps/calcitemaps-v0.2",
+      "dojo/domReady!"
+    ], function(Color, Map, SceneView, Camera, GraphicsLayer,
+        Graphic, Point, Polyline, Polygon,
+        SimpleMarkerSymbol, SimpleLineSymbol, SimpleFillSymbol, 
+        Search, SearchVM, BasemapToggle, BasemapToggleVM, xhr, lang, domStyle, query, Symbol3D,
+        PointSymbol3D, ObjectSymbol3DLayer, PolygonSymbol3D, ExtrudeSymbol3DLayer, TextSymbol3DLayer, SceneLayer, PopupTemplate, all, on, query, IdentifyParameters, LabelSymbol3D) {
+
+
+        this.contentNodes = {}; //this.contentNodes[topic]    Used to store graphics of tweets for each topics
+        this.links = {};        //this.links[topic]           Used to store link graphics for each topic
+        this.topics = {};       //this.topics[topic] = 0 | 1 binary object to determine if topic is diplayed on map
+        this.userGraphics = {}; //userGraphics[screen_name]
+
+        for (var i = 0; i < 141; i++){
+            padding = "";
+            if (i < 10) padding = "00";
+            else if (i < 99) padding = "0";
+            topics[padding + i] = 0;
+        }
+
+        var topicsAdded = [];   //stores which topics have been downloaded
+        var userTweetCount = {};  //userTweetCount[screen_name][topic]  //store number of tweets per user and topic displayed on map
+        var linkGraphicsByUser = {};   //linkGraphicsByUser[screen_name][topic][g1,g2,g3,g4,g5] array of graphics for each user and topic
+        var linkColours = ["#fbb4ae","#b3cde3","#ccebc5","#decbe4","#fed9a6","#ffffcc","#e5d8bd","#fddaec","#f2f2f2"];
+        var contentColours = ["#8dd3c7","#ffffb3","#bebada","#fb8072","#80b1d3","#fdb462","#b3de69","#fccde5","#d9d9d9"];
+        var currentLinkIndex = 0;
+        var currentTopicIndex = 0;
+
+        var steps = 30;  //controls how many segments are used for curve between the users and tweets
+        var lineSymbol;
+        var whiteColour =  new Color([255, 0, 0, 0.6]);
+        var highlightedLineSymbol = new SimpleLineSymbol({
+          color: whiteColour,
+          width: 3
+        });
+
+        this.userGraphicsLayer = new GraphicsLayer();
+        this.contentGraphicsLayer = new GraphicsLayer();
+        this.topicGraphicsLayer = new GraphicsLayer();
+        this.highlightedGraphicsLayer = new GraphicsLayer();
+        this.graphicsLayer = new GraphicsLayer();
+        //var content = "content_nodes.geojson";
+      	var boundary = "neighbor_hood_polys.geojson";
+      	var topic = "topic_nodes.geojson";
+      	var user = "user_nodes.geojson";
+      	
+        //object caches  of layers
+        this.userLookup = {},
+        this.contentLookup = {},
+        this.topicLookup = {};
+
+
+        this.userGraphicsLayer.id = "user";
+        this.contentGraphicsLayer.id = "content";
+        this.topicGraphicsLayer.id = "topic";
+
+        
+        
+        var userSymbol = new PointSymbol3D({
+          symbolLayers: [new ObjectSymbol3DLayer({
+            width: 50,
+            height: 75,
+            resource: {
+              href: "rooms_0.json"
+            },
+            material: {
+              color: [0, 255, 0, 0.8]
+            }
+          }),
+
+          new TextSymbol3DLayer({
+              material: { color: [49,163,84] },
+              size: 12  // Defined in points
+            })]
+        });
+
+      
+      var addHighlightsByUser = function(screen_name){
+        for (topic in linkGraphicsByUser[screen_name]){
+          //only show tweets that are on map
+          if (this.topics[topic]){
+            this.highlightedGraphicsLayer.addMany(linkGraphicsByUser[screen_name][topic]);
+          }
+        }
+      }
+
+
+        var addTweetToUser = function(screen_name, topic){
+          if (!(screen_name in userTweetCount)){
+            userTweetCount[screen_name] = {};
+            linkGraphicsByUser[screen_name] = {}
+          }
+          if ((!(topic in userTweetCount[screen_name]))){
+            userTweetCount[screen_name][topic] = 0;
+            linkGraphicsByUser[screen_name][topic] = [];
+          }
+          userTweetCount[screen_name][topic]++;
+        }
+
+
+        var getTweetCount = function(screen_name){
+          var count = 0;
+          for (topic in userTweetCount[screen_name]){
+            count += userTweetCount[screen_name][topic];
+          }
+          return count;
+        }
+
+        var removeUsers = function(topic){
+          for(user in userTweetCount){
+            if (Object.keys(userTweetCount[user]).length == 1){
+              this.userGraphicsLayer.remove(this.userGraphics[user])
+            }
+            delete userTweetCount[user][topic];
+          }
+        }
+        
+        var addUser = function(screen_name, contentId){
+          var userGeometry = this.userLookup[screen_name];
+          if (!(screen_name in userTweetCount) || Object.keys(userTweetCount[screen_name]).length == 0){
+            //only add user if not already added to map
+            var userGraphic = new Graphic({
+              geometry: userGeometry,
+              attributes: {screen_name: screen_name},
+              symbol: userSymbol
+            });
+            this.userGraphics[screen_name] = userGraphic;
+            this.userGraphicsLayer.add(userGraphic);
+            //userTweetCount[screen_name][contentId] = 1;
+          }
+          addTweetToUser(screen_name, contentId);
+          //userTweetCount[screen_name][contentId] += 1; 
+        }
+
+        var createLinks = function(screen_name, P2){
+          this.highlightedGraphicsLayer.removeAll()
+          var userGraphic = userGraphics[screen_name];  
+          var P1 = userGraphic.geometry;
+          var highlightedSymbol = createLinkGraphics(P1, P2, highlightedLineSymbol);
+          this.highlightedGraphicsLayer.add(highlightedSymbol);
+        }
+
+
+        var addConnectingLines = function(P1, P2, topic, screen_name){
+          var polylineGraphic = createLinkGraphics(P1, P2, lineSymbol);
+          this.graphicsLayer.add(polylineGraphic);
+          this.links[topic].push(polylineGraphic);
+
+          var highlightGraphic = new Graphic({
+            geometry: polylineGraphic.geometry,
+            symbol: highlightedLineSymbol,
+          });
+          linkGraphicsByUser[screen_name][topic].push(highlightGraphic);
+        }
+
+
+        var createLinkGraphics = function(P1, P2, myLineSymbol){
+          var points = [];
+          var dx = P1.x - P2.x;
+          var dy = P1.y - P2.y;
+          var dz = P1.z - P2.z;
+          for (var t = 0; t <= 1; t += 1/steps){
+            var x = P1.x - dx * t;
+            var y = P1.y - dy * t;
+            var z = P1.z - (dz - dz*Math.pow(((1 - Math.cos(Math.PI + t * Math.PI)) / 2), 2));
+            points.push([x,y,z]);
+          }
+          var polyline = new Polyline([
+            points
+          ]);
+          var polylineGraphic = new Graphic({
+            geometry: polyline,
+            symbol: myLineSymbol,
+          });
+          return polylineGraphic;
+        }
+
+
+        var createContent = function(contentId){
+          //content json 
+
+          if (topicsAdded.indexOf(contentId) == -1){
+                //topic has not yet been loaded
+
+            var contentDef = xhr(contentId + "_content_nodes.json", {
+            handleAs: "json"
+            }).then(lang.hitch(this, function(data){
+              topicsAdded.push(contentId)
+              var points = data.features;
+              var colour = Color.fromHex(linkColours[currentLinkIndex]);
+              var rgba = colour.toRgba();
+              rgba[3] = 0.3;
+              lineSymbol = new SimpleLineSymbol({
+                color: rgba,
+                width: 1.5
+              });
+              currentLinkIndex++;
+              this.contentNodes[contentId] = [];
+              this.links[contentId] = [];
+              for (var index in points){
+
+                var pointGeometry = points[index].geometry.coordinates;
+                
+                //look into esri's elevation service for more sophisticated visualization
+                var elevation = points[index].properties.time.toString();
+                elevation = parseInt(elevation.substring(elevation.length - 3));
+
+                var point = new Point({
+                  x: pointGeometry[0],
+                  y: pointGeometry[1],
+                  z: elevation
+                })
+
+                //using adjacency list from original request e.g. data.properties.conten_ids
+                //this.contentLookup[points[index].properties.uid].push(point);
+
+                var objectSymbol = new PointSymbol3D({
+                  symbolLayers: [new ObjectSymbol3DLayer({
+                    width: 50,
+                    height: 50,
+                    resource: {
+                      primitive: "diamond"
+                    },
+                    material: {
+                      color: [0, 215, 215, 0.5]
+                    }
+                  })]
+                });
+
+                //should be pointgraphic
+                var screen_name = points[index].properties.screen_name;
+                var title = screen_name + " | " + points[index].properties.created_at;
+                var polygonGraphic = new Graphic({
+                  geometry: point,
+                  symbol: objectSymbol,
+                  attributes: {id: points[index].id, screen_name: points[index].properties.screen_name, created_at:points[index].properties.created_at, content: points[index].properties.text},
+                  popupTemplate: new PopupTemplate({
+                    title: title,
+                    content: points[index].properties.text
+                  })
+                });
+                this.contentGraphicsLayer.add(polygonGraphic);
+                this.contentNodes[contentId].push(polygonGraphic);
+                addUser(screen_name, contentId);
+                if (this.userLookup[screen_name]){
+                  addConnectingLines(this.userLookup[screen_name], point, contentId, screen_name);
+                }
+              }
+              // do something with handled data
+            }));
+          }
+          else{
+            //add back removed graphics
+            for (graphic in this.contentNodes[contentId]){
+              var screen_name = this.contentNodes[contentId][graphic].attributes.screen_name;
+              addUser(screen_name, contentId);
+            }
+            this.contentGraphicsLayer.addMany(this.contentNodes[contentId]);
+            this.graphicsLayer.addMany(this.links[contentId]);
+          }
+        };
+
+        
+      		
+          //adding 10 user arrays, return userid with associated content list from server in future 
+      	for (var i = 1; i < 11; i++){
+            this.contentLookup[i] = [];
+          }
+      		
+          var sceneLayer = new SceneLayer({
+            //url: "https://scene.arcgis.com/arcgis/rest/services/Hosted/Buildings_Montreal/SceneServer/layers/0"
+            url: "http://tiles.arcgis.com/tiles/z2tnIkrLQ2BRzr6P/arcgis/rest/services/Toronto_LoD3_3D_Buildings/SceneServer/layers/0"  
+        });
+
+          var map = new Map({
+            basemap: "dark-gray",
+            //layers: [sceneLayer]
+          });
+      		
+          map.add(this.graphicsLayer);
+          map.add(this.userGraphicsLayer);
+          map.add(this.contentGraphicsLayer);
+          map.add(this.highlightedGraphicsLayer);
+          map.add(this.topicGraphicsLayer);
+
+          //boundaries json
+      		xhr(boundary, {
+      			handleAs: "json"
+      			}).then(lang.hitch(this, function(data){
+              // do something with handled data
+              for (var ctr in data.features){
+                var boundaryPoly = data.features[ctr].geometry.coordinates[0];
+                /***************************
+                 * Add a 3D polygon graphic
+                 ***************************/
+                var polygon = new Polygon([
+                  boundaryPoly
+                ]);   
+                var fill2Symbol = new PolygonSymbol3D({
+                    symbolLayers: [new ExtrudeSymbol3DLayer({
+                        size: 10,  // 100,000 meters in height
+                        material: { color: "red" }
+                    })]
+                });
+                    
+
+                var fillSymbol = new SimpleFillSymbol({
+                  color: [139, 139, 139, 0.1],
+
+                  outline: new SimpleLineSymbol({
+                    color: [255, 255, 255],
+                    width: 1
+                  })
+                });
+              var polygonGraphic = new Graphic({
+                geometry: polygon,
+                symbol: fillSymbol
+              });
+              this.graphicsLayer.add(polygonGraphic);
+            }
+      		}));
+
+
+
+                
+          //topic json
+          var topicDef = xhr(topic, {
+          handleAs: "json"
+          }).then(lang.hitch(this, function(data){
+            var points = data.features;
+            for (var index in points){
+
+              var pointGeometry = points[index].geometry.coordinates;
+                      
+              var point = new Point({
+                x: pointGeometry[0],
+                y: pointGeometry[1],
+                z: 0
+              });
+
+              //this will be added to adjacency list
+              this.topicLookup[points[index].properties.ID] = point;
+
+              var objectSymbol = new PointSymbol3D({
+                  symbolLayers: [new ObjectSymbol3DLayer({
+                    width: 150,
+                    height: 150,
+                    resource: {
+                      primitive: "sphere"
+                    },
+                    material: {
+                      color: [255, 215, 0, 0.5]
+                    }
+                  })]
+                });
+
+
+
+              var polygonGraphic = new Graphic({
+                geometry: point,
+                attributes: {id:points[index].properties.AREA_S_CD},
+                symbol: objectSymbol
+              });
+
+              //FOR FUTURE REFERENCE this.topicPoints.push(polygonGraphic);
+              this.topicGraphicsLayer.add(polygonGraphic);
+
+            }
+            //FOR FUTURE REFERENCE  do something with handled data
+          }));
+
+         //this.graphicsLayer.remove(this.topicPoints[7])
+          //users json
+          var userDef = xhr(user, {
+            handleAs: "json"
+          }).then(lang.hitch(this, function(data){
+            var points = data;
+            for (var index in points){
+
+              var pointGeometry = points[index].geometry.coordinates;
+                      
+              var point = new Point({
+                x: pointGeometry[0],
+                y: pointGeometry[1],
+                z: 2000
+              })
+
+              this.userLookup[points[index].properties.screen_name] = point;
+            }
+          }));
+
+          var view = new SceneView({
+              container: "mapViewDiv",
+              padding: {
+                  top: 50
+              },
+              map: map,
+              popup: {
+                
+                dockOptions: {
+                  // Disables the dock button from the popup
+                  buttonEnabled: false,
+                  // Ignore the default sizes that trigger responsive docking
+                  breakpoint: false,
+                }
+              },
+              camera: new Camera({
+                  position: new Point({
+                      x: -79.261723,
+                      y: 43.582808,
+                      z: 12660.7049653716385
+                  }),
+                  heading: 0.34445102566290225,
+                  tilt: 82.95536300536367
+              })
+          });
+      	
+
+          //map.basemap.elevationLayers.clear();
+          view.on("click", function(evt) {
+
+            view.hitTest(evt.screenPoint).then(function(response){
+              if(response.results[0].graphic){
+                console.log("Top graphic found! Here it is: ", response.results[0].graphic);
+              }
+              var popupNode = ".esri-view-width-xlarge .esri-popup__main-container";
+              var topNode = ".esri-popup--is-docked-top-left.esri-popup--shadow, .esri-popup--is-docked-top-center.esri-popup--shadow, .esri-popup--is-docked-top-right.esri-popup--shadow, .esri-popup--is-docked-bottom-left.esri-popup--shadow, .esri-popup--is-docked-bottom-center.esri-popup--shadow, .esri-popup--is-docked-bottom-right.esri-popup--shadow";
+              var graphic = response.results[0].graphic;
+              if (graphic){
+                if (graphic.layer.id == "content"){
+                  view.popup.set("dockEnabled",false);
+                  query(popupNode).style({
+                        width:"460px"
+                  });
+                  createLinks(graphic.attributes.screen_name, graphic.geometry);
+                  view.popup.set("title", graphic.attributes.screen_name + " | " + graphics.attributes.created_at);
+                  view.popup.set("content", graphic.attributes.content);
+                  view.popup.open();
+                }
+                else if (graphic.layer.id == "topic"){
+                  view.popup.set("dockEnabled",true);
+                  view.popup.set("dockOptions", {
+                    buttonEnabled: false,
+                    breakpoint: false,
+                    position: "top-right"
+                  }); 
+                  
+
+                  if (this.topics[graphic.attributes.id] == 0){
+                      view.popup.set("title", "Topic #" + graphic.attributes.id);
+                      view.popup.set("content", "<iframe scrolling='no' src='" + graphic.attributes.id + "_ldavis.html' style='height:900px; width=1000px'></iframe>"); 
+                      createContent(graphic.attributes.id);
+                      query(popupNode).style({
+                            width:"1273px",
+                      });
+                      query(popupNode).style({top:"40px"});
+                      this.topics[graphic.attributes.id] = 1;
+                      view.popup.open();
+                  }
+                  else{
+                      this.contentGraphicsLayer.removeMany(this.contentNodes[graphic.attributes.id]);
+                      removeUsers(graphic.attributes.id);
+                      this.graphicsLayer.removeMany(this.links[graphic.attributes.id]);
+                      this.topics[graphic.attributes.id] = 0;
+                      view.popup.close();
+                      //remove graphics
+                  }
+                }
+                else if (graphic.layer.id == "user"){
+                    view.popup.set("dockEnabled",false);
+                    query(popupNode).style({
+                          width:"460px"
+                    });
+                    var nodes = getTweetCount(graphic.attributes.screen_name);
+                    var tweets = " tweet"
+                    if (nodes != 1){
+                      tweets += "s"
+                    }
+                    addHighlightsByUser(graphic.attributes.screen_name);
+                    view.popup.set("title", "Twitter User");
+                    view.popup.set("content", graphic.attributes.screen_name + " | " + nodes  + tweets);
+                    view.popup.open();
+                }
+              }
+            });
+          });
+
+      		 var searchWidget = new Search({
+      			//Setting widget properties via viewModel is subject to 
+      			//change for the 4.0 final release    
+      			viewModel: new SearchVM({
+      			  view: view
+      			})
+      		  }, "searchDiv");
+      		  searchWidget.startup();
+
+      		var basemapToggle = new BasemapToggle({
+      		  viewModel: new BasemapToggleVM({
+      			view: view,  //view with map that uses "streets" basemap
+      			secondaryBasemap: "topo"  //allows for toggling to "hybrid" basemap
+      		  })
+      		}, "BasemapToggleDiv");
+      		basemapToggle.startup();
+          all([userDef, topicDef]).then(function(results){          
+          });
+
+  
+      //});
+
+
+      // Legend
+      /*
+      view.then(function(result) {
+        var legend = new Legend({
+          view: view,
+          layerInfos: [{
+            layer: view.map.layers.items[0],
+            title: ""
+          }]
+        });
+        view.ui.add(legend, "top-right");
+        query("#" + legend.id).addClass("collapse in");
+      });
+      */
+    }
+    
+    
+    
+    
+    );
+  </script>
+
+</body>
+</html>
